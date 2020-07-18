@@ -1,16 +1,15 @@
 # H5MPI documentation 
 
-
-###Features
-    - static reflection based on LLVM/clang
-    - PBLAS/SCALAPACK support: block cycling distribution
-    - full interop with C MPI code though resource/handle automatic conversion
-    - full interop with HDF5 systems with H5CPP by the same author
-    - full linear algebra support for major linear algebra systems
-    - full STL like object support with feature detection based approach
-    - generative programming: only the necessary code is intatiated
-    - RAII idiom to make sure resources are closed
-    - H5CPP style structured exceptions: `mpi::error::any` rules them all
+### Features
+- static reflection based on LLVM/clang
+- PBLAS/SCALAPACK support: block cycling distribution
+- full interop with C MPI code though resource/handle automatic conversion
+- full interop with HDF5 systems with H5CPP by the same author
+- full linear algebra support for major linear algebra systems
+- full STL like object support with feature detection based approach
+- generative programming: only the necessary code is intatiated
+- RAII idiom to make sure resources are closed
+- H5CPP style structured exceptions: `mpi::error::any` rules them all
 
 ### Syntax
 
