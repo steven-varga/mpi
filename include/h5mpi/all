@@ -1,0 +1,11 @@
+/*
+ * Copyright (c) 2021 vargaconsulting, Toronto,ON Canada
+ * Author: Varga, Steven <steven@vargaconsulting.ca>
+ */
+
+#ifndef  MPICPP_ALL_H
+#define MPICPP_ALL_H
+	#include "core"
+	#include "io"
+#endif	
+

@@ -23,8 +23,37 @@ Strong similarity between MPI and HDF5 systems allows significant code/pattern r
 - H5CPP style structured exceptions: `mpi::error::any` rules them all
 - intuitive syntax
 
+### syntax
+
+```cpp
+#include <h5mpi>
+...
+int main(int argc, char* argv[]){
+    mpi::init();
+    arma::mat M(n,m);
+    mpi::send(mpi::world, M, mpi::)
+    mpi::finalize();
+} 
+```
 
 
+
+```cpp
+#include <h5mpi>
+#include <h5cpp>
+...
+int main(int argc, char* argv[]){
+   mpi::init(argc, argv);
+   mpi::comm_t comm; // defaults to MPI_WORLD
+   mpi::info info;   // similar to property lists 
+   size_t rank = mpi::rank(comm), size = mpi::size(comm);
+   auto fd = h5::open("container.h5", h5::fcpl, h5::mpiio({comm, info}) );
+   
+   arma::mat M();
+   h5::read( fd, "dataset", M, h5::collective | h5::block_cyclic );    
+   mpi::finalize()
+}
+```
 
 
 ### context
