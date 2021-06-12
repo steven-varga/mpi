@@ -1,12 +1,14 @@
-# H5MPI documentation 
+MPI C++ proposal
+---------------- 
+
 Strong similarity between MPI and HDF5 systems allows significant code/pattern reuse from H5CPP project. While there are naming differences in concepts such as HDF5 property lists vs MPI_info, the main building blocks remain the same:
 
 - type system
 - static reflection
 - handles/identifier: RAII, 
 - daisy chaining properties can easily be converted into setting MPI_info key/value pairs where needed
-- metaprogramming based pythonic easy syntax
-- STL like feature detection based container approach
+- metaprogramming based pythonic intuitive syntax
+- feature detection idiom based mechanism to support STL like containers: `std::vector` ... 
 
 
 
@@ -17,50 +19,109 @@ Strong similarity between MPI and HDF5 systems allows significant code/pattern r
 - full interop with C MPI code though resource/handle automatic conversion
 - full interop with HDF5 systems with H5CPP by the same author
 - full linear algebra support for major linear algebra systems
-- full STL like object support with feature detection based approach
+- full STL like object support with feature detection idiom based approach
 - generative programming: only the necessary code is instantiated
 - RAII idiom to make sure resources are closed
 - H5CPP style structured exceptions: `mpi::error::any` rules them all
 - intuitive syntax
 
-### syntax
+# Examples
+
+### handles arbitrary complex pod_t type, based on `h5cpp-compiler` and LLVM based static reflection tool:
 
 ```cpp
 #include <h5mpi>
 ...
 int main(int argc, char* argv[]){
-    mpi::init();
-    arma::mat M(n,m);
-    mpi::send(mpi::world, M, mpi::)
-    mpi::finalize();
+    mpi::init(); // optional, will register mpi::finalize with std::atexit
+    int total = elements_per_proc * world_size;
+    { // scatter/gather with local buffer predefined
+        std::vector<int> local(elements_per_proc);
+        mpi::scatter(
+            std::vector<int>(total, 42), local, mpi::world);
+    }
+    { // scatter/gather: arguments may be passed in arbitrary order, `mpi::world` may be implicit
+      // `segment` uses RVO, with size == elements_per_proc, filled with the correct values for
+      //  each rank 
+        auto segment =  mpi::scatter(mpi::world, std::vector<struct_t>(total, struc_t{..}));
+        float sub_avg = std::accumulate(segment.begin(), segment.end(), std::multiplies<int>());
+        auto result = mpi::gather(sub_avg);
+        if(rank != 0) // on non participating ranks will cost a few bytes, rank_0 has all data
+            assert(result.size() == 0);
+    }
 } 
 ```
 
-
-
+Works seamlessly with HDF5 datasystem:
 ```cpp
 #include <h5mpi>
 #include <h5cpp>
 ...
 int main(int argc, char* argv[]){
-   mpi::init(argc, argv);
-   mpi::comm_t comm; // defaults to MPI_WORLD
-   mpi::info info;   // similar to property lists 
-   size_t rank = mpi::rank(comm), size = mpi::size(comm);
-   auto fd = h5::open("container.h5", h5::fcpl, h5::mpiio({comm, info}) );
+  mpi::init(argc, argv);
+  mpi::comm_t comm; // defaults to MPI_WORLD
+  mpi::info info;   // similar to property lists 
+  size_t rank = mpi::rank(comm), size = mpi::size(comm);
+  auto fd = h5::open("container.h5", h5::fcpl, h5::mpiio({comm, info}) );
    
-   arma::mat M();
-   h5::read( fd, "dataset", M, h5::collective | h5::block_cyclic );    
-   mpi::finalize()
+  arma::mat M(height, width, ... );
+  h5::read(fd, "dataset", M, h5::collective | h5::block_cyclic | h5::independent,
+    h5::offset{..}, h5::count{..});    
+  mpi::finalize()
 }
 ```
+another example, reworked from 'ring.cxx'
+```cpp
 
+#include "h5mpi/all"
+#include <iostream>
+
+namespace some {
+    struct pod_t{
+        size_t count,
+        int array[10],
+        ... arbitrary complex, cascading .. 
+    };
+}
+
+
+int main(int argc, char *argv[]) {
+    mpi::init();
+    mpi::comm_t comm; // defaults to MPI_WORLD, this could be implicit
+    int = mpi::rank(comm), size = mpi::size(comm);
+    int next = (rank + 1) % size, 
+    prev = (rank + size - 1) % size, tag;
+
+    if (rank == 0) mpi::send( 
+        // passed as reference, object created in place
+        some::pod_t{..}, next [, tag]);
+
+    while (true) { // passing the message around
+        // RVO, needs template specialization
+        some::pod_t message = mpi::receive<some::pod_t>(prev, tag);
+        if (rank == 0) -- message.count; 
+
+        mpi::send(message, next, tag);
+        if (message.count == 0) // exiting
+            break;
+    }
+    some::pod_t message; 
+    if (rank == 0) // message passed by reference, will be updated
+        mpi::receive(message, prev, tag);
+    // with pod_t types pointer passing also works out of the box, and my be more idiomatic
+    // mpi::receive(&message, prev, tag); 
+    // however this pattern is overly restrictive when applied to STL like containers 
+    MPI::Finalize();
+    return 0;
+}
+
+```
 
 ### context
 - `mpi::init`
 - `mpi::thread`
 
-### list of resources
+### list of resources, similar to HDF5 `hid_t` descriptors
 - `mpi::comm`      `mpi::comm_t`
 - `mpi::window`    `mpi::win_t`
 - `mpi::type`      `mpi::tp_t`
@@ -140,9 +201,6 @@ int main(int argc, char* argv[]){
 - `mpi::post`
 - `mpi::tick`
 - `mpi::time`
-
-
-
 
 ### property lists
 Similarly to HDF5 systems MPI has a way to provide side band information in MPI_info object as 
