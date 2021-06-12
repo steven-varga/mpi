@@ -27,52 +27,48 @@ Strong similarity between MPI and HDF5 systems allows significant code/pattern r
 
 # Examples
 
-### handles arbitrary complex pod_t type, based on `h5cpp-compiler` and LLVM based static reflection tool:
-
+### scatter - gather operation with containers (collective call)
 ```cpp
 #include <h5mpi>
 ...
 int main(int argc, char* argv[]){
-    mpi::init(); // optional, will register mpi::finalize with std::atexit
+    mpi::init(); // will register mpi::finalize with std::atexit
     int total = elements_per_proc * world_size;
-    { // scatter/gather with local buffer predefined
-        std::vector<int> local(elements_per_proc);
-        mpi::scatter(
-            std::vector<int>(total, 42), local, mpi::world);
-    }
-    { // scatter/gather: arguments may be passed in arbitrary order, `mpi::world` may be implicit
-      // `segment` uses RVO, with size == elements_per_proc, filled with the correct values for
-      //  each rank 
-        auto segment =  mpi::scatter(mpi::world, std::vector<struct_t>(total, struc_t{..}));
-        float sub_avg = std::accumulate(segment.begin(), segment.end(), std::multiplies<int>());
-        auto result = mpi::gather(sub_avg);
-        if(rank != 0) // on non participating ranks will cost a few bytes, rank_0 has all data
-            assert(result.size() == 0);
-    }
+    // scatter/gather: arguments may be passed in arbitrary order, `mpi::world` may be implicit
+    // `segment` uses RVO, with size == elements_per_proc, filled with the correct values for
+    //  each rank 
+    std::vector<float> segment = mpi::scatter(mpi::world, std::vector<float>(total, 1.0));
+    float partial_sum = std::reduce(segment.begin(), segment.end(), std::plus)
+    std::vector<float> result = mpi::gather(partial_sum); // world_size
+    if(rank != 0) // no participating ranks must return a valid container with zero elements
+        assert(result.size() == 0);
 } 
 ```
 
-Works seamlessly with HDF5 datasystem:
+will work seamlessly with H5CPP/HDF5 datasystem, supporting major linear algebra libraries and all containers 
+with STL like properties. 
 ```cpp
 #include <h5mpi>
 #include <h5cpp>
 ...
 int main(int argc, char* argv[]){
-  mpi::init(argc, argv);
-  mpi::comm_t comm; // defaults to MPI_WORLD
-  mpi::info info;   // similar to property lists 
+  mpi::init(argc, argv);  // registers mpi::finalize at exit
+  mpi::comm_t comm;       // defaults to MPI_WORLD
+  mpi::info info;         // similar to property lists 
   size_t rank = mpi::rank(comm), size = mpi::size(comm);
   auto fd = h5::open("container.h5", h5::fcpl, h5::mpiio({comm, info}) );
    
   arma::mat M(height, width, ... );
+  // reads a block accroding to block cycling distribution or entire dataset into an armadillo matrix
+  // making it compatible with PBLAS
   h5::read(fd, "dataset", M, h5::collective | h5::block_cyclic | h5::independent,
     h5::offset{..}, h5::count{..});    
-  mpi::finalize()
 }
 ```
+
+handles arbitrary complex pod_t type, based on `h5cpp-compiler` and LLVM based static reflection tool:
 another example, reworked from 'ring.cxx'
 ```cpp
-
 #include "h5mpi/all"
 #include <iostream>
 
@@ -83,7 +79,6 @@ namespace some {
         ... arbitrary complex, cascading .. 
     };
 }
-
 
 int main(int argc, char *argv[]) {
     mpi::init();
@@ -127,7 +122,6 @@ int main(int argc, char *argv[]) {
 - `mpi::type`      `mpi::tp_t`
 - `mpi::request`   `mpi::req_t`
 - `mpi::attribute` `mpi::attr_t`
-- `mpi::cartesian` `mpi::cart_t`
 - `mpi::group`     `mpi::grp_t`
 - `mpi::file`      `mpi::fd_t`
 - `mpi::info`      `mpi::inf_t`
