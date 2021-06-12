@@ -7,7 +7,7 @@ Strong similarity between MPI and HDF5 systems allows significant code/pattern r
 - static reflection
 - handles/identifier: RAII, 
 - daisy chaining properties can easily be converted into setting MPI_info key/value pairs where needed
-- metaprogramming based pythonic intuitive syntax
+- intuitive pythonic syntax with template metaprogramming
 - feature detection idiom based mechanism to support STL like containers: `std::vector` ... 
 
 
@@ -16,9 +16,9 @@ Strong similarity between MPI and HDF5 systems allows significant code/pattern r
 ### Features
 - static reflection based on LLVM/clang
 - PBLAS/SCALAPACK support: block cycling distribution
-- full interop with C MPI code though resource/handle automatic conversion
+- full interop with C MPI code: handles are binary equivalent
 - full interop with HDF5 systems with H5CPP by the same author
-- full linear algebra support for major linear algebra systems
+- full linear algebra support for major linear algebra systems: armadillo, eigen3, ... 
 - full STL like object support with feature detection idiom based approach
 - generative programming: only the necessary code is instantiated
 - RAII idiom to make sure resources are closed
@@ -27,47 +27,10 @@ Strong similarity between MPI and HDF5 systems allows significant code/pattern r
 
 # Examples
 
-### scatter - gather operation with containers (collective call)
-```cpp
-#include <h5mpi>
-...
-int main(int argc, char* argv[]){
-    mpi::init(); // will register mpi::finalize with std::atexit
-    int total = elements_per_proc * world_size;
-    // scatter/gather: arguments may be passed in arbitrary order, `mpi::world` may be implicit
-    // `segment` uses RVO, with size == elements_per_proc, filled with the correct values for
-    //  each rank 
-    std::vector<float> segment = mpi::scatter(mpi::world, std::vector<float>(total, 1.0));
-    float partial_sum = std::reduce(segment.begin(), segment.end(), std::plus)
-    std::vector<float> result = mpi::gather(partial_sum); // world_size
-    if(rank != 0) // no participating ranks must return a valid container with zero elements
-        assert(result.size() == 0);
-} 
-```
+The proposed mpi c++ will be able to handle arbitrary complex pod_t type -- type descriptors generated at compile time --; based on `h5cpp-compiler` and LLVM based static reflection tool, keeping the option open to switch over to purely 
+template based reflection when it becomes available. In the following reworked from ['ring.cxx']() example, we are toying with implicit values for `rank` and `size`, which 
+can further compress the code, allowing user focus on the task at hand.
 
-will work seamlessly with H5CPP/HDF5 datasystem, supporting major linear algebra libraries and all containers 
-with STL like properties. 
-```cpp
-#include <h5mpi>
-#include <h5cpp>
-...
-int main(int argc, char* argv[]){
-  mpi::init(argc, argv);  // registers mpi::finalize at exit
-  mpi::comm_t comm;       // defaults to MPI_WORLD
-  mpi::info info;         // similar to property lists 
-  size_t rank = mpi::rank(comm), size = mpi::size(comm);
-  auto fd = h5::open("container.h5", h5::fcpl, h5::mpiio({comm, info}) );
-   
-  arma::mat M(height, width, ... );
-  // reads a block accroding to block cycling distribution or entire dataset into an armadillo matrix
-  // making it compatible with PBLAS
-  h5::read(fd, "dataset", M, h5::collective | h5::block_cyclic | h5::independent,
-    h5::offset{..}, h5::count{..});    
-}
-```
-
-handles arbitrary complex pod_t type, based on `h5cpp-compiler` and LLVM based static reflection tool:
-another example, reworked from 'ring.cxx'
 ```cpp
 #include "h5mpi/all"
 #include <iostream>
@@ -81,36 +44,82 @@ namespace some {
 }
 
 int main(int argc, char *argv[]) {
-    mpi::init();
-    mpi::comm_t comm; // defaults to MPI_WORLD, this could be implicit
-    int = mpi::rank(comm), size = mpi::size(comm);
-    int next = (rank + 1) % size, 
-    prev = (rank + size - 1) % size, tag;
+    // registers mpi::finalize() at exit, similar behaviour of python and julia
+    mpi::init(); 
+    // it would be nice to have global variable `mpi::rank` as opposed to 
+    // a function call; but  
+    int next = (mpi::rank() + 1) % mpi::size(),
+    prev = (mpi::rank() + mpi::size() - 1) % mpi::size() [, tag];
 
-    if (rank == 0) mpi::send( 
+    if (mpi::rank() == 0) mpi::send( 
         // passed as reference, object created in place
         some::pod_t{..}, next [, tag]);
 
     while (true) { // passing the message around
         // RVO, needs template specialization
-        some::pod_t message = mpi::receive<some::pod_t>(prev, tag);
-        if (rank == 0) -- message.count; 
+        some::pod_t message = mpi::receive<some::pod_t>(prev [, tag]);
+        if (mpi::rank() == 0) -- message.count; 
 
-        mpi::send(message, next, tag);
+        mpi::send(message, next [, tag]);
         if (message.count == 0) // exiting
             break;
     }
     some::pod_t message; 
-    if (rank == 0) // message passed by reference, will be updated
+    if (mpi::rank() == 0) // message passed by reference, will be updated
         mpi::receive(message, prev, tag);
-    // with pod_t types pointer passing also works out of the box, and my be more idiomatic
-    // mpi::receive(&message, prev, tag); 
-    // however this pattern is overly restrictive when applied to STL like containers 
-    MPI::Finalize();
-    return 0;
+    
+    return 0; // mpit::finalize() gets called 
 }
-
 ```
+
+### another example with scatter - gather operation for containers
+```cpp
+#include <h5mpi>
+...
+int main(int argc, char* argv[]){
+    mpi::init(); // will register mpi::finalize with std::atexit
+    int total = elements_per_proc * world_size;
+    // scatter/gather: arguments may be passed in arbitrary order, `mpi::world` may be implicit
+    // `segment` uses RVO, with size == elements_per_proc, filled with the correct values for
+    //  each rank 
+    std::vector<float> segment = mpi::scatter(
+        std::vector<float>(total, 1.0)   // data being spread out
+        [,mpi::root{0}] [, mpi::world],  // optional values
+        [,mpi::count{5}] );              // blocks/rank
+    float partial_sum = std::reduce(segment.begin(), segment.end(), std::plus)
+    std::vector<float> result = mpi::gather(partial_sum); // world_size
+    if(rank != 0) // no participating ranks must return a valid container with zero elements
+        assert(result.size() == 0);
+} 
+```
+A possible code snipet, to demonstrate smooth interaction between linear algebra systems, HDF5 and MPI:
+```cpp
+#include <h5mpi>
+#include <h5cpp>
+...
+int main(int argc, char* argv[]){
+  mpi::init(argc, argv);  // registers mpi::finalize at exit
+  mpi::comm_t comm;       // defaults to MPI_WORLD
+  mpi::info info;         // similar to property lists 
+  size_t rank = mpi::rank(comm), size = mpi::size(comm);
+  auto fd = h5::open("container.h5", h5::fcpl, h5::mpiio({comm, info}) );
+   
+  arma::mat A(height, width, ... ), B(...), C(...);
+  // reads a block accroding to block cycling distribution or entire dataset
+  // into armadillo matrix, making it compatible with PBLAS, no scatter needed
+  // instead implicit MPI file IO calls behind the scenes distribute data to each rank
+  h5::read(fd, "dataset/A", A, h5::block_cyclic, h5::offset{..}, h5::count{..});
+  h5::read(fd, "dataset/B", B, h5::block_cyclic, h5::offset{..}, h5::count{..});
+  // parallel matrix matrix multiply, results in local C
+  PvGEMM('N', 'T', A.nrows, A.n_cols, REAL, 
+    A.memptr(), 0,0, desc_a,
+    B.memptr(), 0,0, desc_b, REAL,
+    C.memptr(), 0, 0, desc_c);
+  // save result into an HDF5 container
+  h5::write(fd, "result/C", C, h5::block_cyclic);
+}
+```
+
 
 ### context
 - `mpi::init`
