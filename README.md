@@ -28,8 +28,7 @@ Strong similarity between MPI and HDF5 systems allows significant code/pattern r
 # Examples
 
 The proposed mpi c++ will be able to handle arbitrary complex pod_t type -- type descriptors generated at compile time --; based on `h5cpp-compiler` and LLVM based static reflection tool, keeping the option open to switch over to purely 
-template based reflection when it becomes available. In the following reworked from ['ring.cxx']() example, we are toying with implicit values for `rank` and `size`, which 
-can further compress the code, allowing user focus on the task at hand.
+template based reflection when it becomes available. In the following reworked from ['ring.cxx']() example.
 
 ```cpp
 #include "h5mpi/all"
